@@ -1,0 +1,13 @@
+
+# Executables
+minios
+
+# Object files
+*.o
+*.out
+
+# Build artifacts
+build/
+
+# Temporary files
+*.log
