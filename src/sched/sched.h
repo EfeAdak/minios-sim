@@ -56,4 +56,7 @@ void sched_free_processes(
 );
 
 int sched_run_fcfs(Process *processes, size_t count);
+
+int sched_select_fcfs(const Process *processes, size_t count);
+
 #endif

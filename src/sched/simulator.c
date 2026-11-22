@@ -2,23 +2,7 @@
 #include "sched.h"
 #include <stdio.h>
 
-// Select the process that entered READY first.
-static int next_ready(const Process *processes, size_t count) {
-    int selected = -1;
 
-    for (size_t i = 0; i < count; ++i) {
-        if (processes[i].state != STATE_READY)
-            continue;
-
-        if (selected < 0 ||
-            processes[i].ready_order <
-                processes[selected].ready_order) {
-            selected = (int)i;
-        }
-    }
-
-    return selected;
-}
 
 // Print a Gantt chart segment.
 static void print_segment(
@@ -66,7 +50,7 @@ int sched_run_fcfs(Process *processes, size_t count) {
 
         // 2. Dispatch the next READY process
         if (running == -1) {
-            running = next_ready(processes, count);
+            running = sched_select_fcfs(processes, count);
 
             if (running != -1) {
                 Process *p = &processes[running];
