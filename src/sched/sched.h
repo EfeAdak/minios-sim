@@ -44,4 +44,15 @@ typedef struct {
     unsigned long ready_order;
 } Process;
 
+int sched_load_processes(
+    const char *path,
+    Process **processes,
+    size_t *count
+);
+
+void sched_free_processes(
+    Process *processes,
+    size_t count
+);
+
 #endif
