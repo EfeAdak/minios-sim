@@ -20,16 +20,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Loaded %zu processes:\n", count);
-
-    for (size_t i = 0; i < count; ++i) {
-        printf("%s: arrival=%d priority=%d bursts=%zu\n",
-               processes[i].pid,
-               processes[i].arrival,
-               processes[i].original_priority,
-               processes[i].burst_count);
-    }
+    int result = sched_run_fcfs(processes, count);
 
     sched_free_processes(processes, count);
-    return 0;
+
+    return result == 0 ? 0 : 1;
 }

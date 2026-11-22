@@ -55,4 +55,5 @@ void sched_free_processes(
     size_t count
 );
 
+int sched_run_fcfs(Process *processes, size_t count);
 #endif
