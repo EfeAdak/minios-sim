@@ -21,6 +21,8 @@ int main(int argc, char *argv[]) {
             policy = POLICY_SJF;
         } else if (strcmp(argv[3], "srtf") == 0) {
             policy = POLICY_SRTF;
+        } else if (strcmp(argv[3], "priority") == 0) {
+            policy = POLICY_PRIORITY;
         } else {
             fprintf(stderr, "Unknown scheduling policy\n");
             return 1;
@@ -30,7 +32,7 @@ int main(int argc, char *argv[]) {
 
     } else {
         fprintf(stderr,
-                "Usage: %s sched [-a fcfs|sjf] <input-file>\n",
+                "Usage: %s sched [-a fcfs|sjf|srtf|priority] <input-file>\n",
                 argv[0]);
         return 1;
     }

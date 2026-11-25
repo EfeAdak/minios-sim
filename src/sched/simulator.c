@@ -8,6 +8,7 @@ static const char *policy_name(SchedulingPolicy policy) {
         case POLICY_FCFS: return "FCFS";
         case POLICY_SJF:  return "SJF";
         case POLICY_SRTF: return "SRTF";
+        case POLICY_PRIORITY: return "PRIORITY";
         default:          return "UNKNOWN";
     }
 }
@@ -72,8 +73,12 @@ static int select_process(
     if (policy == POLICY_SJF || policy == POLICY_SRTF)
         return sched_select_sjf(processes, count);
 
+    if (policy == POLICY_PRIORITY)
+        return sched_select_priority(processes, count);
+
     return sched_select_fcfs(processes, count);
 }
+
 
 static void print_segment(
     const Process *processes,
@@ -113,15 +118,37 @@ int sched_run(
         admit_ready(processes, count, time,
                     &ready_sequence);
 
-        // 2. SRTF preemption
-        if (policy == POLICY_SRTF && running != -1) {
+        
+        // 2. Aging and preemption
+        if (policy == POLICY_PRIORITY) {
+            sched_apply_aging(processes, count, time);
+        }
+
+        if ((policy == POLICY_SRTF ||
+            policy == POLICY_PRIORITY) &&
+            running != -1) {
+
             int candidate =
                 select_process(processes, count, policy);
 
-            if (candidate != -1 &&
-                processes[candidate].remaining <
-                processes[running].remaining) {
+            int should_preempt = 0;
 
+            if (candidate != -1) {
+                if (policy == POLICY_SRTF) {
+                    should_preempt =
+                        processes[candidate].remaining <
+                        processes[running].remaining;
+
+                } else if (policy == POLICY_PRIORITY) {
+                    should_preempt =
+                        sched_priority_before(
+                            &processes[candidate],
+                            &processes[running]
+                        );
+                }
+            }
+
+            if (should_preempt) {
                 enter_ready(&processes[running],
                             time, &ready_sequence);
 
@@ -129,7 +156,6 @@ int sched_run(
             }
         }
 
-        // 3. Dispatch
         if (running == -1) {
             running =
                 select_process(processes, count, policy);

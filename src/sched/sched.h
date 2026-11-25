@@ -55,8 +55,28 @@ void sched_free_processes(
     size_t count
 );
 
-int sched_run_fcfs(Process *processes, size_t count);
+int sched_run(
+    Process *processes,
+    size_t count,
+    SchedulingPolicy policy
+);
 
 int sched_select_fcfs(const Process *processes, size_t count);
+
+int sched_select_sjf(const Process *processes, size_t count);
+
+#define AGING_INTERVAL 5
+
+int sched_select_priority(
+    const Process *processes, size_t count
+);
+
+int sched_priority_before(
+    const Process *a, const Process *b
+);
+
+void sched_apply_aging(
+    Process *processes, size_t count, int time
+);
 
 #endif
