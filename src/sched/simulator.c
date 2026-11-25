@@ -1,10 +1,80 @@
 
 #include "sched.h"
 #include <stdio.h>
+#include <string.h>
 
+static const char *policy_name(SchedulingPolicy policy) {
+    switch (policy) {
+        case POLICY_FCFS: return "FCFS";
+        case POLICY_SJF:  return "SJF";
+        case POLICY_SRTF: return "SRTF";
+        default:          return "UNKNOWN";
+    }
+}
 
+static void enter_ready(
+    Process *p,
+    int time,
+    unsigned long *sequence
+) {
+    p->state = STATE_READY;
+    p->ready_entered_at = time;
+    p->ready_order = (*sequence)++;
+}
 
-// Print a Gantt chart segment.
+// Process arrivals and completed I/O in PID order.
+static void admit_ready(
+    Process *processes,
+    size_t count,
+    int time,
+    unsigned long *sequence
+) {
+    while (1) {
+        int selected = -1;
+
+        for (size_t i = 0; i < count; ++i) {
+            Process *p = &processes[i];
+
+            int eligible =
+                (p->state == STATE_NEW &&
+                 p->arrival <= time) ||
+                (p->state == STATE_WAITING &&
+                 p->remaining == 0);
+
+            if (!eligible)
+                continue;
+
+            if (selected == -1 ||
+                strcmp(p->pid, processes[selected].pid) < 0) {
+                selected = (int)i;
+            }
+        }
+
+        if (selected == -1)
+            break;
+
+        Process *p = &processes[selected];
+
+        if (p->state == STATE_WAITING) {
+            ++p->burst_index;
+            p->remaining = p->bursts[p->burst_index];
+        }
+
+        enter_ready(p, time, sequence);
+    }
+}
+
+static int select_process(
+    const Process *processes,
+    size_t count,
+    SchedulingPolicy policy
+) {
+    if (policy == POLICY_SJF || policy == POLICY_SRTF)
+        return sched_select_sjf(processes, count);
+
+    return sched_select_fcfs(processes, count);
+}
+
 static void print_segment(
     const Process *processes,
     int running,
@@ -18,7 +88,11 @@ static void print_segment(
                start, end, processes[running].pid);
 }
 
-int sched_run_fcfs(Process *processes, size_t count) {
+int sched_run(
+    Process *processes,
+    size_t count,
+    SchedulingPolicy policy
+) {
     if (processes == NULL || count == 0)
         return -1;
 
@@ -31,26 +105,34 @@ int sched_run_fcfs(Process *processes, size_t count) {
     size_t completed = 0;
     unsigned long ready_sequence = 0;
 
-    printf("Gantt (FCFS):\n");
+    printf("Gantt (%s):\n", policy_name(policy));
 
     while (completed < count) {
 
-        // 1. New process arrivals
-        for (size_t i = 0; i < count; ++i) {
-            Process *p = &processes[i];
+        // 1. Arrivals and completed I/O
+        admit_ready(processes, count, time,
+                    &ready_sequence);
 
-            if (p->state == STATE_NEW &&
-                p->arrival <= time) {
+        // 2. SRTF preemption
+        if (policy == POLICY_SRTF && running != -1) {
+            int candidate =
+                select_process(processes, count, policy);
 
-                p->state = STATE_READY;
-                p->ready_entered_at = time;
-                p->ready_order = ready_sequence++;
+            if (candidate != -1 &&
+                processes[candidate].remaining <
+                processes[running].remaining) {
+
+                enter_ready(&processes[running],
+                            time, &ready_sequence);
+
+                running = -1;
             }
         }
 
-        // 2. Dispatch the next READY process
+        // 3. Dispatch
         if (running == -1) {
-            running = sched_select_fcfs(processes, count);
+            running =
+                select_process(processes, count, policy);
 
             if (running != -1) {
                 Process *p = &processes[running];
@@ -65,43 +147,27 @@ int sched_run_fcfs(Process *processes, size_t count) {
             }
         }
 
-        // 3. Track Gantt chart segments
+        // 4. Gantt chart
         if (running != previous_running) {
             if (previous_running != -2) {
-                print_segment(
-                    processes,
-                    previous_running,
-                    segment_start,
-                    time
-                );
+                print_segment(processes,
+                              previous_running,
+                              segment_start, time);
             }
 
             segment_start = time;
             previous_running = running;
         }
 
-        // 4. Advance I/O operations
+        // 5. Advance I/O
         for (size_t i = 0; i < count; ++i) {
             Process *p = &processes[i];
 
-            if (p->state != STATE_WAITING)
-                continue;
-
-            --p->remaining;
-
-            if (p->remaining == 0) {
-                ++p->burst_index;
-
-                p->remaining =
-                    p->bursts[p->burst_index];
-
-                p->state = STATE_READY;
-                p->ready_entered_at = time + 1;
-                p->ready_order = ready_sequence++;
-            }
+            if (p->state == STATE_WAITING)
+                --p->remaining;
         }
 
-        // 5. Execute one CPU tick
+        // 6. Execute one CPU tick
         if (running != -1) {
             Process *p = &processes[running];
 
@@ -111,13 +177,10 @@ int sched_run_fcfs(Process *processes, size_t count) {
             if (p->remaining == 0) {
                 ++p->burst_index;
 
-                if (p->burst_index ==
-                    p->burst_count) {
-
+                if (p->burst_index == p->burst_count) {
                     p->state = STATE_TERMINATED;
                     p->completion = time + 1;
                     ++completed;
-
                 } else {
                     p->state = STATE_WAITING;
                     p->remaining =
@@ -131,15 +194,9 @@ int sched_run_fcfs(Process *processes, size_t count) {
         ++time;
     }
 
-    // 6. Print final Gantt segment
-    print_segment(
-        processes,
-        previous_running,
-        segment_start,
-        time
-    );
+    print_segment(processes, previous_running,
+                  segment_start, time);
 
-    // 7. Calculate performance metrics
     printf("\n\n%-8s %7s %8s %11s %11s\n",
            "PID", "Waiting", "Response",
            "Turnaround", "Completion");
@@ -158,8 +215,8 @@ int sched_run_fcfs(Process *processes, size_t count) {
     printf("CPU utilization: %.2f%%\n",
            100.0 * busy_ticks / time);
 
-    printf("Throughput: %.2f processes/tick\n",
-           (double)count / time);
+    printf("Throughput: %.2f processes/100 ticks\n",
+           100.0 * count / time);
 
     return 0;
 }
