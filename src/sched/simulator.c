@@ -5,11 +5,12 @@
 
 static const char *policy_name(SchedulingPolicy policy) {
     switch (policy) {
-        case POLICY_FCFS: return "FCFS";
-        case POLICY_SJF:  return "SJF";
-        case POLICY_SRTF: return "SRTF";
+        case POLICY_FCFS:     return "FCFS";
+        case POLICY_SJF:      return "SJF";
+        case POLICY_SRTF:     return "SRTF";
         case POLICY_PRIORITY: return "PRIORITY";
-        default:          return "UNKNOWN";
+        case POLICY_RR:       return "RR";
+        default:              return "UNKNOWN";
     }
 }
 
@@ -23,7 +24,6 @@ static void enter_ready(
     p->ready_order = (*sequence)++;
 }
 
-// Process arrivals and completed I/O in PID order.
 static void admit_ready(
     Process *processes,
     size_t count,
@@ -79,7 +79,6 @@ static int select_process(
     return sched_select_fcfs(processes, count);
 }
 
-
 static void print_segment(
     const Process *processes,
     int running,
@@ -96,9 +95,10 @@ static void print_segment(
 int sched_run(
     Process *processes,
     size_t count,
-    SchedulingPolicy policy
+    SchedulingPolicy policy,
+    int quantum
 ) {
-    if (processes == NULL || count == 0)
+    if (processes == NULL || count == 0 || quantum <= 0)
         return -1;
 
     int time = 0;
@@ -106,6 +106,7 @@ int sched_run(
     int previous_running = -2;
     int segment_start = 0;
     int busy_ticks = 0;
+    int quantum_used = 0;
 
     size_t completed = 0;
     unsigned long ready_sequence = 0;
@@ -118,14 +119,14 @@ int sched_run(
         admit_ready(processes, count, time,
                     &ready_sequence);
 
-        
-        // 2. Aging and preemption
+        // 2. Priority aging
         if (policy == POLICY_PRIORITY) {
             sched_apply_aging(processes, count, time);
         }
 
+        // 3. SRTF and Priority preemption
         if ((policy == POLICY_SRTF ||
-            policy == POLICY_PRIORITY) &&
+             policy == POLICY_PRIORITY) &&
             running != -1) {
 
             int candidate =
@@ -138,8 +139,7 @@ int sched_run(
                     should_preempt =
                         processes[candidate].remaining <
                         processes[running].remaining;
-
-                } else if (policy == POLICY_PRIORITY) {
+                } else {
                     should_preempt =
                         sched_priority_before(
                             &processes[candidate],
@@ -156,6 +156,18 @@ int sched_run(
             }
         }
 
+        // 4. Round Robin quantum expiration
+        if (policy == POLICY_RR &&
+            running != -1 &&
+            quantum_used >= quantum) {
+
+            enter_ready(&processes[running],
+                        time, &ready_sequence);
+
+            running = -1;
+        }
+
+        // 5. Dispatch
         if (running == -1) {
             running =
                 select_process(processes, count, policy);
@@ -170,10 +182,11 @@ int sched_run(
                     p->first_dispatch = time;
 
                 p->state = STATE_RUNNING;
+                quantum_used = 0;
             }
         }
 
-        // 4. Gantt chart
+        // 6. Gantt chart
         if (running != previous_running) {
             if (previous_running != -2) {
                 print_segment(processes,
@@ -185,7 +198,7 @@ int sched_run(
             previous_running = running;
         }
 
-        // 5. Advance I/O
+        // 7. Advance I/O
         for (size_t i = 0; i < count; ++i) {
             Process *p = &processes[i];
 
@@ -193,11 +206,12 @@ int sched_run(
                 --p->remaining;
         }
 
-        // 6. Execute one CPU tick
+        // 8. Execute one CPU tick
         if (running != -1) {
             Process *p = &processes[running];
 
             ++busy_ticks;
+            ++quantum_used;
             --p->remaining;
 
             if (p->remaining == 0) {

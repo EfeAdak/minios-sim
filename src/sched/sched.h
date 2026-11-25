@@ -58,7 +58,8 @@ void sched_free_processes(
 int sched_run(
     Process *processes,
     size_t count,
-    SchedulingPolicy policy
+    SchedulingPolicy policy,
+    int quantum
 );
 
 int sched_select_fcfs(const Process *processes, size_t count);
